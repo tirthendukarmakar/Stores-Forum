@@ -43,7 +43,7 @@ const globalCSS = `
     display: flex; 
     justify-content: space-between; 
     align-items: center; 
-    background: rgba(255, 255, 255, 0.82); 
+    background: rgba(255, 255, 255, 0.85); 
     backdrop-filter: blur(16px);
     padding: 18px 28px; 
     border-radius: 18px; 
@@ -89,7 +89,7 @@ const globalCSS = `
 
   .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-bottom: 32px; }
   .card { 
-    background: rgba(255, 255, 255, 0.90); 
+    background: rgba(255, 255, 255, 0.92); 
     backdrop-filter: blur(16px);
     padding: 30px; 
     border-radius: 20px; 
@@ -183,13 +183,13 @@ const globalCSS = `
   .rating-btn.active { background: #fef3c7; color: #b45309; border-color: #fcd34d; font-weight: 700; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2); }
 
   .landing-hero {
-    min-height: 90vh;
+    min-height: 85vh;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     text-align: center;
-    padding: 72px 24px;
+    padding: 40px 24px 72px 24px;
     position: relative;
     z-index: 1;
   }
@@ -277,7 +277,6 @@ const globalCSS = `
   }
 `;
 
-// Particle Background
 const ParticleBackground = () => {
   const canvasRef = useRef(null);
 
@@ -321,7 +320,7 @@ const ParticleBackground = () => {
             ctx.strokeStyle = `rgba(148, 163, 184, ${0.18 * (1 - dist / 130)})`;
             ctx.lineWidth = 0.8;
             ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.lineTo(particles[i].x, particles[i].y);
             ctx.stroke();
           }
         }
@@ -423,7 +422,7 @@ export default function App() {
 
     try {
       const res = await axios.post(`${API_BASE}/auth/request-signup-otp`, { name, email, password, address });
-      alert(res.data.message || 'OTP generated! Please check your terminal console / email.');
+      alert(res.data.message || 'OTP generated! Please check your terminal console and email inbox.');
       setOtpSent(true);
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to request OTP');
@@ -521,13 +520,14 @@ export default function App() {
                   <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '6px' }}>
                     {isSignup ? (otpSent ? 'Enter OTP' : 'Create Account') : 'Stores Forum Login'}
                   </h2>
-                  <p style={{ fontSize: '0.875rem', color: '#64748b' }}>
+                  <div style={{ fontSize: '0.875rem', color: '#64748b', marginTop: '4px' }}>
                     {selectedRoleType !== 'ALL' && <span className="user-badge" style={{ margin: '0 0 6px 0' }}>{selectedRoleType}</span>}
-                    <br />
-                    {isSignup
-                      ? (otpSent ? `Enter the 6-digit OTP sent to ${email}` : 'Sign up to browse and rate registered stores')
-                      : 'Sign in to access your dashboard'}
-                  </p>
+                    <p style={{ marginTop: '4px' }}>
+                      {isSignup
+                        ? (otpSent ? `Enter the 6-digit OTP sent to ${email}` : 'Sign up to browse and rate registered stores')
+                        : 'Sign in to access your dashboard'}
+                    </p>
+                  </div>
                 </div>
 
                 {isSignup ? (

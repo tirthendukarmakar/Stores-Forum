@@ -4,20 +4,30 @@ const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Database connection pool reading from environment variables
+// Database connection pool reading securely from environment variables
 const db = mysql.createPool({
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
-    password: "rimO#2003",
+    password: process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : '',
     database: process.env.DB_NAME || 'store_rating_db',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
+});
+
+// Nodemailer SMTP transporter setup
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
 });
 
 // In-memory OTP storage
@@ -68,12 +78,37 @@ app.post('/api/auth/request-signup-otp', async (req, res) => {
             password: hashedPassword,
             address,
             otp: generatedOtp,
-            expiresAt: Date.now() + 10 * 60 * 1000
+            expiresAt: Date.now() + 10 * 60 * 1000 // 10 minutes expiry
         };
 
         console.log(`\n========================================\n[SIGNUP OTP for ${email}]: ${generatedOtp}\n========================================\n`);
-        res.json({ message: 'OTP sent! Please check terminal console.' });
+
+        if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+            try {
+                await transporter.sendMail({
+                    from: `"Store Rating System" <${process.env.EMAIL_USER}>`,
+                    to: email,
+                    subject: 'Email Verification OTP - Store Rating Portal',
+                    html: `
+            <div style="font-family: Arial, sans-serif; padding: 24px; background-color: #f8fafc; border-radius: 8px;">
+              <h2 style="color: #4f46e5; margin-bottom: 12px;">Account Verification</h2>
+              <p style="color: #334155;">Hello <strong>${name}</strong>,</p>
+              <p style="color: #475569;">Thank you for registering. Use the verification code below to activate your account:</p>
+              <div style="background-color: #ffffff; border: 1px solid #e2e8f0; padding: 14px 28px; font-size: 26px; font-weight: 800; letter-spacing: 6px; display: inline-block; border-radius: 8px; color: #1e1b4b; margin: 18px 0;">
+                ${generatedOtp}
+              </div>
+              <p style="color: #64748b; font-size: 0.85rem;">This code will expire in 10 minutes. If you did not initiate this request, please disregard this email.</p>
+            </div>
+          `
+                });
+            } catch (mailErr) {
+                console.error('SMTP Dispatch Warning:', mailErr.message);
+            }
+        }
+
+        res.json({ message: 'OTP sent! Please check your email inbox (or terminal console).' });
     } catch (err) {
+        console.error('Request Signup Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -99,7 +134,7 @@ app.post('/api/auth/verify-signup-otp', async (req, res) => {
     }
 });
 
-// User Login (Supports bcrypt and plain-text fallback)
+// User Login
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
     try {
@@ -154,6 +189,7 @@ app.get('/api/admin/dashboard', authenticateToken, authorizeRole(['SYSTEM_ADMIN'
         const [[{ total_ratings }]] = await db.query('SELECT COUNT(*) AS total_ratings FROM ratings');
         res.json({ total_users, total_stores, total_ratings });
     } catch (err) {
+        console.error('Error fetching admin stats:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -205,6 +241,7 @@ app.get('/api/admin/users', authenticateToken, authorizeRole(['SYSTEM_ADMIN']), 
         const [users] = await db.query(query);
         res.json(users);
     } catch (err) {
+        console.error('Error fetching admin users:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -223,7 +260,7 @@ app.post('/api/admin/stores', authenticateToken, authorizeRole(['SYSTEM_ADMIN'])
     }
 });
 
-// List Stores with Owner Name and Overall Rating
+// List Stores for Admin
 app.get('/api/admin/stores', authenticateToken, authorizeRole(['SYSTEM_ADMIN']), async (req, res) => {
     try {
         const query = `
@@ -243,34 +280,49 @@ app.get('/api/admin/stores', authenticateToken, authorizeRole(['SYSTEM_ADMIN']),
         const [stores] = await db.query(query);
         res.json(stores);
     } catch (err) {
+        console.error('Error fetching admin stores:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
-// ---------------- USER ROUTES ----------------
+// ---------------- USER STORE & RATING ROUTES ----------------
 
-// List Stores for Normal User
-app.get('/api/user/stores', authenticateToken, authorizeRole(['NORMAL_USER']), async (req, res) => {
+// List Stores for Normal User (Aliases both /api/stores and /api/user/stores)
+const handleGetStores = async (req, res) => {
     try {
+        const search = req.query.search ? `%${req.query.search}%` : '%';
+        const userId = req.user.id;
+
         const query = `
       SELECT 
-        s.id, s.name, s.address,
-        COALESCE(AVG(r_all.rating), 0) AS overall_rating,
-        (SELECT rating FROM ratings WHERE store_id = s.id AND user_id = ?) AS user_rating
+        s.id, 
+        s.name, 
+        s.address,
+        COALESCE(AVG(r_all.rating), 0) AS overallRating,
+        (SELECT rating FROM ratings WHERE store_id = s.id AND user_id = ?) AS myRating
       FROM stores s
       LEFT JOIN ratings r_all ON s.id = r_all.store_id
+      WHERE s.name LIKE ? OR s.address LIKE ?
       GROUP BY s.id, s.name, s.address
     `;
-        const [stores] = await db.query(query, [req.user.id]);
+        const [stores] = await db.query(query, [userId, search, search]);
         res.json(stores);
     } catch (err) {
+        console.error('Error fetching user stores:', err);
         res.status(500).json({ error: err.message });
     }
-});
+};
 
-// Submit or Modify Rating
-app.post('/api/user/rate', authenticateToken, authorizeRole(['NORMAL_USER']), async (req, res) => {
+app.get('/api/stores', authenticateToken, handleGetStores);
+app.get('/api/user/stores', authenticateToken, handleGetStores);
+
+// Submit or Modify Rating (Aliases both /api/ratings and /api/user/rate)
+const handlePostRating = async (req, res) => {
     const { store_id, rating } = req.body;
+    if (!store_id || !rating) {
+        return res.status(400).json({ error: 'store_id and rating are required' });
+    }
+
     try {
         const [existing] = await db.query('SELECT * FROM ratings WHERE user_id = ? AND store_id = ?', [req.user.id, store_id]);
         if (existing.length > 0) {
@@ -280,9 +332,13 @@ app.post('/api/user/rate', authenticateToken, authorizeRole(['NORMAL_USER']), as
         }
         res.json({ message: 'Rating saved successfully' });
     } catch (err) {
+        console.error('Error saving rating:', err);
         res.status(500).json({ error: err.message });
     }
-});
+};
+
+app.post('/api/ratings', authenticateToken, handlePostRating);
+app.post('/api/user/rate', authenticateToken, handlePostRating);
 
 // ---------------- STORE OWNER ROUTES ----------------
 
@@ -304,6 +360,7 @@ app.get('/api/owner/store', authenticateToken, authorizeRole(['STORE_OWNER']), a
 
         res.json({ store, avg_rating, reviewers });
     } catch (err) {
+        console.error('Error fetching owner store:', err);
         res.status(500).json({ error: err.message });
     }
 });
