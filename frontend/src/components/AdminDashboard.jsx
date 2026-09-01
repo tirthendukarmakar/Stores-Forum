@@ -103,6 +103,31 @@ export default function AdminDashboard({ token }) {
         }
     };
 
+    const handleDeleteStore = async (id) => {
+        if (!window.confirm('Are you sure you want to delete this store?')) return;
+        try {
+            await axios.delete(`${API_BASE}/admin/stores/${id}`, config);
+            alert('Store deleted');
+            loadData();
+        } catch (err) {
+            alert(err.response?.data?.error || 'Failed to delete store');
+        }
+    };
+
+    const handleAssignOwner = async (storeId, newOwnerId) => {
+        try {
+            await axios.put(
+                `${API_BASE}/admin/stores/${storeId}/assign-owner`,
+                { owner_id: newOwnerId ? parseInt(newOwnerId) : null },
+                config
+            );
+            alert('Store owner updated successfully!');
+            loadData();
+        } catch (err) {
+            alert(err.response?.data?.error || 'Failed to assign owner');
+        }
+    };
+
     // Filter & Sort Users
     const filteredUsers = users
         .filter(u => {
@@ -160,8 +185,11 @@ export default function AdminDashboard({ token }) {
         }
     };
 
+    const ownersList = users.filter(u => u.role === 'STORE_OWNER');
+
     return (
         <div>
+            {/* Metric Counters */}
             <div className="metrics-grid">
                 <div className="metric-card">
                     <p>Total Registered Users</p>
@@ -177,6 +205,7 @@ export default function AdminDashboard({ token }) {
                 </div>
             </div>
 
+            {/* Forms Grid */}
             <div className="card-grid">
                 <div className="card">
                     <h3>Add New User</h3>
@@ -194,7 +223,7 @@ export default function AdminDashboard({ token }) {
                             <input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} required />
                         </div>
                         <div className="input-group">
-                            <label>Address</label>
+                            <label>Address (Max 400 characters)</label>
                             <input value={newUserAddress} onChange={e => setNewUserAddress(e.target.value)} required />
                         </div>
                         <div className="input-group">
@@ -213,7 +242,7 @@ export default function AdminDashboard({ token }) {
                     <h3>Add New Store</h3>
                     <form onSubmit={handleCreateStore}>
                         <div className="input-group">
-                            <label>Store Name</label>
+                            <label>Store Name (20-60 characters)</label>
                             <input value={newStoreName} onChange={e => setNewStoreName(e.target.value)} required />
                         </div>
                         <div className="input-group">
@@ -221,20 +250,18 @@ export default function AdminDashboard({ token }) {
                             <input type="email" value={newStoreEmail} onChange={e => setNewStoreEmail(e.target.value)} required />
                         </div>
                         <div className="input-group">
-                            <label>Store Address</label>
+                            <label>Store Address (Max 400 characters)</label>
                             <input value={newStoreAddress} onChange={e => setNewStoreAddress(e.target.value)} required />
                         </div>
                         <div className="input-group">
                             <label>Assign Store Owner (Optional)</label>
                             <select value={newStoreOwnerId} onChange={e => setNewStoreOwnerId(e.target.value)}>
                                 <option value="">-- No Owner Assigned --</option>
-                                {users
-                                    .filter(u => u.role === 'STORE_OWNER')
-                                    .map(owner => (
-                                        <option key={owner.id} value={owner.id}>
-                                            {owner.name} ({owner.email})
-                                        </option>
-                                    ))}
+                                {ownersList.map(owner => (
+                                    <option key={owner.id} value={owner.id}>
+                                        {owner.name} ({owner.email})
+                                    </option>
+                                ))}
                             </select>
                         </div>
                         <button className="btn-primary" type="submit">Create Store</button>
@@ -242,6 +269,7 @@ export default function AdminDashboard({ token }) {
                 </div>
             </div>
 
+            {/* Registered Users Table */}
             <div className="table-wrapper">
                 <div className="table-header-box">
                     <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>Registered Users</h3>
@@ -302,7 +330,11 @@ export default function AdminDashboard({ token }) {
                                 </td>
                                 <td>
                                     {u.role !== 'SYSTEM_ADMIN' ? (
-                                        <button className="btn-danger" style={{ padding: '6px 12px', fontSize: '0.75rem' }} onClick={() => handleDeleteUser(u.id)}>
+                                        <button
+                                            className="btn-danger"
+                                            style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                                            onClick={() => handleDeleteUser(u.id)}
+                                        >
                                             Delete
                                         </button>
                                     ) : (
@@ -315,6 +347,7 @@ export default function AdminDashboard({ token }) {
                 </table>
             </div>
 
+            {/* Registered Stores Table with Assignment Control */}
             <div className="table-wrapper">
                 <div className="table-header-box">
                     <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>Registered Stores</h3>
@@ -333,7 +366,7 @@ export default function AdminDashboard({ token }) {
                                 STORE NAME {storeSortField === 'name' ? (storeSortOrder === 'asc' ? '↑' : '↓') : ''}
                             </th>
                             <th className="sortable" onClick={() => handleStoreSort('owner_name')}>
-                                OWNER NAME {storeSortField === 'owner_name' ? (storeSortOrder === 'asc' ? '↑' : '↓') : ''}
+                                CURRENT OWNER {storeSortField === 'owner_name' ? (storeSortOrder === 'asc' ? '↑' : '↓') : ''}
                             </th>
                             <th className="sortable" onClick={() => handleStoreSort('email')}>
                                 EMAIL {storeSortField === 'email' ? (storeSortOrder === 'asc' ? '↑' : '↓') : ''}
@@ -344,6 +377,8 @@ export default function AdminDashboard({ token }) {
                             <th className="sortable" onClick={() => handleStoreSort('overall_rating')}>
                                 OVERALL RATING {storeSortField === 'overall_rating' ? (storeSortOrder === 'asc' ? '↑' : '↓') : ''}
                             </th>
+                            <th>ASSIGN / CHANGE OWNER</th>
+                            <th>ACTION</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -356,7 +391,7 @@ export default function AdminDashboard({ token }) {
                                             {store.owner_name}
                                         </span>
                                     ) : (
-                                        <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Unassigned</span>
+                                        <span style={{ color: '#ef4444', fontStyle: 'italic' }}>Unassigned</span>
                                     )}
                                 </td>
                                 <td>{store.email}</td>
@@ -364,11 +399,34 @@ export default function AdminDashboard({ token }) {
                                 <td style={{ color: '#d97706', fontWeight: 700 }}>
                                     ★ {Number(store.overall_rating || 0).toFixed(1)}
                                 </td>
+                                <td>
+                                    <select
+                                        value={store.owner_id || ''}
+                                        onChange={e => handleAssignOwner(store.id, e.target.value)}
+                                        style={{ maxWidth: '220px', padding: '6px 10px', fontSize: '0.8rem' }}
+                                    >
+                                        <option value="">-- No Owner (Unassigned) --</option>
+                                        {ownersList.map(o => (
+                                            <option key={o.id} value={o.id}>
+                                                {o.name} ({o.email})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </td>
+                                <td>
+                                    <button
+                                        className="btn-danger"
+                                        style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                                        onClick={() => handleDeleteStore(store.id)}
+                                    >
+                                        Delete
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                         {filteredStores.length === 0 && (
                             <tr>
-                                <td colSpan="5" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
+                                <td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
                                     No stores found.
                                 </td>
                             </tr>

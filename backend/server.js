@@ -260,6 +260,38 @@ app.post('/api/admin/stores', authenticateToken, authorizeRole(['SYSTEM_ADMIN'])
     }
 });
 
+// Assign or Update Store Owner for an Existing Store
+app.put('/api/admin/stores/:id/assign-owner', authenticateToken, authorizeRole(['SYSTEM_ADMIN']), async (req, res) => {
+    const { id } = req.params;
+    const { owner_id } = req.body;
+
+    try {
+        if (owner_id) {
+            const [owner] = await db.query('SELECT role FROM users WHERE id = ?', [owner_id]);
+            if (owner.length === 0 || owner[0].role !== 'STORE_OWNER') {
+                return res.status(400).json({ error: 'Selected user must have the STORE_OWNER role' });
+            }
+        }
+
+        await db.query('UPDATE stores SET owner_id = ? WHERE id = ?', [owner_id || null, id]);
+        res.json({ message: 'Store owner updated successfully' });
+    } catch (err) {
+        console.error('Error assigning store owner:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete Store
+app.delete('/api/admin/stores/:id', authenticateToken, authorizeRole(['SYSTEM_ADMIN']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query('DELETE FROM stores WHERE id = ?', [id]);
+        res.json({ message: 'Store deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // List Stores for Admin
 app.get('/api/admin/stores', authenticateToken, authorizeRole(['SYSTEM_ADMIN']), async (req, res) => {
     try {
@@ -287,7 +319,7 @@ app.get('/api/admin/stores', authenticateToken, authorizeRole(['SYSTEM_ADMIN']),
 
 // ---------------- USER STORE & RATING ROUTES ----------------
 
-// List Stores for Normal User (Aliases both /api/stores and /api/user/stores)
+// List Stores for Normal User (Supports search & dynamic user ratings)
 const handleGetStores = async (req, res) => {
     try {
         const search = req.query.search ? `%${req.query.search}%` : '%';
@@ -298,14 +330,16 @@ const handleGetStores = async (req, res) => {
         s.id, 
         s.name, 
         s.address,
+        COALESCE(AVG(r_all.rating), 0) AS overall_rating,
         COALESCE(AVG(r_all.rating), 0) AS overallRating,
+        (SELECT rating FROM ratings WHERE store_id = s.id AND user_id = ?) AS user_rating,
         (SELECT rating FROM ratings WHERE store_id = s.id AND user_id = ?) AS myRating
       FROM stores s
       LEFT JOIN ratings r_all ON s.id = r_all.store_id
       WHERE s.name LIKE ? OR s.address LIKE ?
       GROUP BY s.id, s.name, s.address
     `;
-        const [stores] = await db.query(query, [userId, search, search]);
+        const [stores] = await db.query(query, [userId, userId, search, search]);
         res.json(stores);
     } catch (err) {
         console.error('Error fetching user stores:', err);
@@ -316,7 +350,7 @@ const handleGetStores = async (req, res) => {
 app.get('/api/stores', authenticateToken, handleGetStores);
 app.get('/api/user/stores', authenticateToken, handleGetStores);
 
-// Submit or Modify Rating (Aliases both /api/ratings and /api/user/rate)
+// Submit or Modify Rating
 const handlePostRating = async (req, res) => {
     const { store_id, rating } = req.body;
     if (!store_id || !rating) {
